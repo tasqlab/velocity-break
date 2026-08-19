@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 use tauri::Manager;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct DnsProfile {

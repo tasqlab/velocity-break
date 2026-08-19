@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Velocity — DPI Bypass & DNS Manager</title>
+    <style>
+        :root {
+            --bg: #0a0a0a;
+            --surface: #0f0f0f;
+            --border: #222;
+            --text: #e0e0e0;
+            --muted: #555;
+            --accent: #4ade80;
+            --accent-dim: rgba(74, 222, 128, 0.1);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 4rem 1.5rem;
+        }
+
+        /* Header */
+        header {
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 2rem;
+            margin-bottom: 3rem;
+        }
+
+        h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--accent);
+            letter-spacing: -0.02em;
+        }
+
+        .tagline {
+            color: var(--muted);
+            font-size: 0.85rem;
+            margin-top: 0.5rem;
+            letter-spacing: 0.05em;
+        }
+
+        /* Sections */
+        section {
+            margin-bottom: 2.5rem;
+        }
+
+        h2 {
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.15em;
+            color: var(--muted);
+            text-transform: uppercase;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        p, li {
+            font-size: 0.9rem;
+            color: #bbb;
+        }
+
+        ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        li {
+            padding: 0.4rem 0;
+            padding-left: 1.2rem;
+            position: relative;
+        }
+
+        li::before {
+            content: '›';
+            position: absolute;
+            left: 0;
+            color: var(--accent);
+            font-weight: bold;
+        }
+
+        /* Download Button */
+        .download-btn {
+            display: inline-block;
+            padding: 0.85rem 2rem;
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            text-decoration: none;
+            font-size: 0.85rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            transition: all 0.2s ease;
+            margin-top: 0.5rem;
+        }
+
+        .download-btn:hover {
+            background: var(--accent-dim);
+            box-shadow: 0 0 20px var(--accent-dim);
+        }
+
+        .version {
+            font-size: 0.7rem;
+            color: var(--muted);
+            margin-top: 0.5rem;
+        }
+
+        /* Code blocks */
+        code {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            padding: 0.15rem 0.4rem;
+            border-radius: 3px;
+            font-size: 0.8rem;
+            color: var(--accent);
+        }
+
+        pre {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            padding: 1rem 1.2rem;
+            border-radius: 4px;
+            overflow-x: auto;
+            margin: 0.75rem 0;
+        }
+
+        pre code {
+            background: none;
+            border: none;
+            padding: 0;
+            color: #bbb;
+        }
+
+        /* Feature grid */
+        .features {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        .feature-card {
+            border: 1px solid var(--border);
+            background: var(--surface);
+            padding: 1.2rem;
+        }
+
+        .feature-card .label {
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            color: var(--accent);
+            margin-bottom: 0.4rem;
+        }
+
+        .feature-card .desc {
+            font-size: 0.8rem;
+            color: var(--muted);
+        }
+
+        /* Footer */
+        footer {
+            margin-top: 4rem;
+            padding-top: 2rem;
+            border-top: 1px solid var(--border);
+            font-size: 0.7rem;
+            color: var(--muted);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        footer a {
+            color: var(--muted);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        footer a:hover {
+            color: var(--accent);
+        }
+
+        /* Responsive */
+        @media (max-width: 600px) {
+            .features { grid-template-columns: 1fr; }
+            h1 { font-size: 1.5rem; }
+            .container { padding: 2rem 1rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>VELOCITY</h1>
+            <div class="tagline">DPI BYPASS // DNS MANAGER // WINDOWS</div>
+        </header>
+
+        <section>
+            <h2>Download</h2>
+            <p>A self-contained DPI bypass wrapper with integrated DNS management. No installation dependencies. Just run.</p>
+            <br>
+            <a class="download-btn" href="https://github.com/tasqlab/velocity-break/releases/latest">DOWNLOAD LATEST RELEASE</a>
+            <div class="version">Windows x64 • Requires Administrator</div>
+        </section>
+
+        <section>
+            <h2>Features</h2>
+            <div class="features">
+                <div class="feature-card">
+                    <div class="label">ZAPRET ENGINE</div>
+                    <div class="desc">Multi-strategy DPI desync with fake TLS, QUIC, and TCP splitting</div>
+                </div>
+                <div class="feature-card">
+                    <div class="label">DNS CONTROL</div>
+                    <div class="desc">One-click switching between Cloudflare, Quad9, Google, AdGuard, NextDNS</div>
+                </div>
+                <div class="feature-card">
+                    <div class="label">MODE SELECTOR</div>
+                    <div class="desc">Best / All / Default / Custom profiles for different bypass needs</div>
+                </div>
+                <div class="feature-card">
+                    <div class="label">SELF-CONTAINED</div>
+                    <div class="desc">All binaries, lists, and payloads bundled. No external deps</div>
+                </div>
+            </div>
+        </section>
+
+        <section>
+            <h2>Requirements</h2>
+            <ul>
+                <li>Windows 10 / 11 (64-bit)</li>
+                <li>Administrator privileges</li>
+                <li>Microsoft Edge WebView2 Runtime (auto-installed)</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2>Building from Source</h2>
+            <pre><code># Prerequisites: Node.js, Rust, Visual Studio Build Tools
+
+git clone https://github.com/tasqlab/velocity-break.git
+cd velocity-break
+npm install
+npm run tauri dev      # Development
+npm run tauri build    # Production installer</code></pre>
+        </section>
+
+        <section>
+            <h2>Tech Stack</h2>
+            <ul>
+                <li>Tauri v2 (Rust backend)</li>
+                <li>React + TypeScript frontend</li>
+                <li>Tailwind CSS v4</li>
+                <li>Zapret / winws DPI bypass engine</li>
+            </ul>
+        </section>
+
+        <footer>
+            <span>© 2026 tasqlab</span>
+            <a href="https://github.com/tasqlab/velocity-break">GitHub</a>
+        </footer>
+    </div>
+</body>
+</html>
