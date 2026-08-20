@@ -4,271 +4,611 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Velocity — DPI Bypass & DNS Manager</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg: #0a0a0a;
-            --surface: #0f0f0f;
-            --border: #222;
-            --text: #e0e0e0;
-            --muted: #555;
-            --accent: #4ade80;
-            --accent-dim: rgba(74, 222, 128, 0.1);
+            --bg: #030303;
+            --surface: #0a0a0a;
+            --surface-2: #111;
+            --border: #1a1a1a;
+            --border-hover: #2a2a2a;
+            --text: #e5e5e5;
+            --text-muted: #666;
+            --text-dim: #444;
+            --green: #4ade80;
+            --green-dim: rgba(74, 222, 128, 0.1);
+            --green-glow: rgba(74, 222, 128, 0.3);
+            --red: #f87171;
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
+        html { scroll-behavior: smooth; }
+
         body {
             background: var(--bg);
             color: var(--text);
-            font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+            font-family: 'Inter', -apple-system, sans-serif;
             line-height: 1.6;
-            min-height: 100vh;
+            overflow-x: hidden;
         }
 
-        .container {
-            max-width: 720px;
-            margin: 0 auto;
-            padding: 4rem 1.5rem;
+        /* ── Animated Background ── */
+        .bg-grid {
+            position: fixed; inset: 0; z-index: 0; pointer-events: none;
+            background-image:
+                linear-gradient(rgba(74,222,128,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(74,222,128,0.03) 1px, transparent 1px);
+            background-size: 60px 60px;
+            mask-image: radial-gradient(ellipse 80% 60% at 50% 30%, black 20%, transparent 70%);
+            -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 30%, black 20%, transparent 70%);
         }
 
-        /* Header */
-        header {
+        .bg-glow {
+            position: fixed; z-index: 0; pointer-events: none;
+            width: 600px; height: 600px; border-radius: 50%;
+            filter: blur(120px); opacity: 0.15;
+        }
+        .bg-glow-1 { top: -200px; left: 50%; transform: translateX(-50%); background: var(--green); animation: float 8s ease-in-out infinite; }
+        .bg-glow-2 { bottom: -300px; right: -200px; background: #059669; animation: float 12s ease-in-out infinite reverse; }
+
+        @keyframes float {
+            0%, 100% { transform: translateX(-50%) translateY(0); }
+            50% { transform: translateX(-50%) translateY(-30px); }
+        }
+
+        /* ── Noise ─ */
+        .noise {
+            position: fixed; inset: 0; z-index: 1; pointer-events: none; opacity: 0.025;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+        }
+
+        /* ── Layout ─ */
+        .container { max-width: 1100px; margin: 0 auto; padding: 0 2rem; position: relative; z-index: 2; }
+
+        /* ── Nav ── */
+        nav {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+            padding: 1rem 2rem;
+            background: rgba(3,3,3,0.8);
+            backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
             border-bottom: 1px solid var(--border);
-            padding-bottom: 2rem;
-            margin-bottom: 3rem;
+            display: flex; justify-content: space-between; align-items: center;
         }
-
-        h1 {
-            font-size: 2rem;
-            font-weight: 700;
-            color: var(--accent);
-            letter-spacing: -0.02em;
+        .nav-logo {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 800; font-size: 1.1rem;
+            color: var(--green); letter-spacing: 0.15em;
+            display: flex; align-items: center; gap: 0.75rem;
         }
-
-        .tagline {
-            color: var(--muted);
-            font-size: 0.85rem;
-            margin-top: 0.5rem;
-            letter-spacing: 0.05em;
-        }
-
-        /* Sections */
-        section {
-            margin-bottom: 2.5rem;
-        }
-
-        h2 {
-            font-size: 0.75rem;
-            font-weight: 700;
-            letter-spacing: 0.15em;
-            color: var(--muted);
-            text-transform: uppercase;
-            margin-bottom: 1rem;
-            padding-bottom: 0.5rem;
-            border-bottom: 1px solid var(--border);
-        }
-
-        p, li {
-            font-size: 0.9rem;
-            color: #bbb;
-        }
-
-        ul {
-            list-style: none;
-            padding: 0;
-        }
-
-        li {
-            padding: 0.4rem 0;
-            padding-left: 1.2rem;
-            position: relative;
-        }
-
-        li::before {
-            content: '›';
-            position: absolute;
-            left: 0;
-            color: var(--accent);
-            font-weight: bold;
-        }
-
-        /* Download Button */
-        .download-btn {
-            display: inline-block;
-            padding: 0.85rem 2rem;
-            border: 1px solid var(--accent);
-            color: var(--accent);
-            text-decoration: none;
-            font-size: 0.85rem;
-            font-weight: 700;
-            letter-spacing: 0.1em;
-            transition: all 0.2s ease;
-            margin-top: 0.5rem;
-        }
-
-        .download-btn:hover {
-            background: var(--accent-dim);
-            box-shadow: 0 0 20px var(--accent-dim);
-        }
-
-        .version {
-            font-size: 0.7rem;
-            color: var(--muted);
-            margin-top: 0.5rem;
-        }
-
-        /* Code blocks */
-        code {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            padding: 0.15rem 0.4rem;
-            border-radius: 3px;
-            font-size: 0.8rem;
-            color: var(--accent);
-        }
-
-        pre {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            padding: 1rem 1.2rem;
-            border-radius: 4px;
-            overflow-x: auto;
-            margin: 0.75rem 0;
-        }
-
-        pre code {
-            background: none;
-            border: none;
-            padding: 0;
-            color: #bbb;
-        }
-
-        /* Feature grid */
-        .features {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1rem;
-        }
-
-        .feature-card {
-            border: 1px solid var(--border);
-            background: var(--surface);
-            padding: 1.2rem;
-        }
-
-        .feature-card .label {
-            font-size: 0.7rem;
-            font-weight: 700;
-            letter-spacing: 0.1em;
-            color: var(--accent);
-            margin-bottom: 0.4rem;
-        }
-
-        .feature-card .desc {
-            font-size: 0.8rem;
-            color: var(--muted);
-        }
-
-        /* Footer */
-        footer {
-            margin-top: 4rem;
-            padding-top: 2rem;
-            border-top: 1px solid var(--border);
-            font-size: 0.7rem;
-            color: var(--muted);
-            display: flex;
-            justify-content: space-between;
-        }
-
-        footer a {
-            color: var(--muted);
-            text-decoration: none;
+        .nav-logo svg { width: 20px; height: 20px; }
+        .nav-links { display: flex; gap: 2rem; align-items: center; }
+        .nav-links a {
+            color: var(--text-muted); text-decoration: none;
+            font-size: 0.85rem; font-weight: 500;
             transition: color 0.2s;
         }
+        .nav-links a:hover { color: var(--text); }
+        .nav-btn {
+            padding: 0.5rem 1.25rem; border: 1px solid var(--green);
+            color: var(--green); background: transparent;
+            font-size: 0.8rem; font-weight: 600; letter-spacing: 0.05em;
+            cursor: pointer; transition: all 0.2s; text-decoration: none;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .nav-btn:hover { background: var(--green-dim); box-shadow: 0 0 20px var(--green-dim); }
 
-        footer a:hover {
-            color: var(--accent);
+        /* ── Hero ── */
+        .hero {
+            min-height: 100vh; display: flex; flex-direction: column;
+            justify-content: center; align-items: center; text-align: center;
+            padding: 8rem 2rem 4rem;
+        }
+        .hero-badge {
+            display: inline-flex; align-items: center; gap: 0.5rem;
+            padding: 0.4rem 1rem; border: 1px solid var(--border);
+            border-radius: 100px; font-size: 0.75rem; color: var(--text-muted);
+            margin-bottom: 2rem; font-family: 'JetBrains Mono', monospace;
+            letter-spacing: 0.1em;
+            animation: fadeUp 0.6s ease both;
+        }
+        .hero-badge .dot {
+            width: 6px; height: 6px; border-radius: 50%;
+            background: var(--green); box-shadow: 0 0 8px var(--green-glow);
+            animation: pulse 2s ease-in-out infinite;
+        }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+        .hero h1 {
+            font-family: 'Inter', sans-serif;
+            font-size: clamp(3rem, 8vw, 5.5rem);
+            font-weight: 900; line-height: 1.05;
+            letter-spacing: -0.03em;
+            margin-bottom: 1.5rem;
+            animation: fadeUp 0.6s ease 0.1s both;
+        }
+        .hero h1 .gradient {
+            background: linear-gradient(135deg, var(--green), #34d399, #059669);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .hero p {
+            font-size: 1.15rem; color: var(--text-muted);
+            max-width: 550px; margin-bottom: 2.5rem; line-height: 1.7;
+            animation: fadeUp 0.6s ease 0.2s both;
+        }
+        .hero-actions {
+            display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center;
+            animation: fadeUp 0.6s ease 0.3s both;
+        }
+        .btn-primary {
+            display: inline-flex; align-items: center; gap: 0.5rem;
+            padding: 0.9rem 2rem; background: var(--green); color: #000;
+            font-weight: 700; font-size: 0.9rem; text-decoration: none;
+            border: none; cursor: pointer; transition: all 0.2s;
+            letter-spacing: 0.02em;
+        }
+        .btn-primary:hover { box-shadow: 0 0 30px var(--green-glow); transform: translateY(-1px); }
+        .btn-secondary {
+            display: inline-flex; align-items: center; gap: 0.5rem;
+            padding: 0.9rem 2rem; background: transparent;
+            color: var(--text); font-weight: 600; font-size: 0.9rem;
+            text-decoration: none; border: 1px solid var(--border);
+            cursor: pointer; transition: all 0.2s;
+        }
+        .btn-secondary:hover { border-color: var(--border-hover); background: var(--surface); }
+
+        .hero-version {
+            margin-top: 1.5rem; font-size: 0.75rem; color: var(--text-dim);
+            font-family: 'JetBrains Mono', monospace; letter-spacing: 0.1em;
+            animation: fadeUp 0.6s ease 0.4s both;
         }
 
-        /* Responsive */
-        @media (max-width: 600px) {
-            .features { grid-template-columns: 1fr; }
-            h1 { font-size: 1.5rem; }
-            .container { padding: 2rem 1rem; }
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
         }
+
+        /* ── Terminal Preview ── */
+        .terminal-preview {
+            margin: 0 auto 6rem; max-width: 700px;
+            border: 1px solid var(--border); border-radius: 12px;
+            overflow: hidden; background: var(--surface);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 40px rgba(74,222,128,0.05);
+            animation: fadeUp 0.6s ease 0.5s both;
+        }
+        .terminal-bar {
+            display: flex; align-items: center; gap: 6px;
+            padding: 0.75rem 1rem; background: var(--surface-2);
+            border-bottom: 1px solid var(--border);
+        }
+        .terminal-dot { width: 10px; height: 10px; border-radius: 50%; }
+        .terminal-dot.r { background: #ff5f57; }
+        .terminal-dot.y { background: #febc2e; }
+        .terminal-dot.g { background: #28c840; }
+        .terminal-title {
+            flex: 1; text-align: center; font-size: 0.7rem;
+            color: var(--text-dim); font-family: 'JetBrains Mono', monospace;
+        }
+        .terminal-body {
+            padding: 1.5rem; font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem; line-height: 1.8; color: var(--text-muted);
+        }
+        .terminal-body .prompt { color: var(--green); }
+        .terminal-body .cmd { color: var(--text); }
+        .terminal-body .output { color: var(--text-dim); }
+        .terminal-body .success { color: var(--green); }
+        .terminal-cursor {
+            display: inline-block; width: 8px; height: 16px;
+            background: var(--green); animation: blink 1s step-end infinite;
+            vertical-align: text-bottom; margin-left: 2px;
+        }
+        @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+
+        /* ── Section Headers ── */
+        .section-header {
+            text-align: center; margin-bottom: 4rem;
+        }
+        .section-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.7rem; font-weight: 600;
+            letter-spacing: 0.2em; color: var(--green);
+            text-transform: uppercase; margin-bottom: 1rem;
+            display: flex; align-items: center; justify-content: center; gap: 0.75rem;
+        }
+        .section-label::before, .section-label::after {
+            content: ''; width: 30px; height: 1px; background: var(--green); opacity: 0.3;
+        }
+        .section-header h2 {
+            font-size: clamp(2rem, 4vw, 3rem);
+            font-weight: 800; letter-spacing: -0.02em;
+            margin-bottom: 1rem;
+        }
+        .section-header p {
+            color: var(--text-muted); font-size: 1.05rem; max-width: 500px; margin: 0 auto;
+        }
+
+        /* ── Features Grid ── */
+        .features { padding: 6rem 0; }
+        .features-grid {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+        .feature-card {
+            padding: 2rem; border: 1px solid var(--border);
+            border-radius: 12px; background: var(--surface);
+            transition: all 0.3s ease; position: relative; overflow: hidden;
+        }
+        .feature-card::before {
+            content: ''; position: absolute; top: 0; left: 0; right: 0;
+            height: 1px; background: linear-gradient(90deg, transparent, var(--green), transparent);
+            opacity: 0; transition: opacity 0.3s;
+        }
+        .feature-card:hover { border-color: var(--border-hover); transform: translateY(-2px); }
+        .feature-card:hover::before { opacity: 0.5; }
+        .feature-icon {
+            width: 48px; height: 48px; border-radius: 10px;
+            background: var(--green-dim); border: 1px solid rgba(74,222,128,0.15);
+            display: flex; align-items: center; justify-content: center;
+            margin-bottom: 1.25rem; font-size: 1.2rem;
+        }
+        .feature-card h3 {
+            font-size: 1.1rem; font-weight: 700; margin-bottom: 0.5rem;
+            letter-spacing: -0.01em;
+        }
+        .feature-card p { color: var(--text-muted); font-size: 0.9rem; line-height: 1.6; }
+
+        /* ── How It Works ── */
+        .how-it-works { padding: 6rem 0; }
+        .steps {
+            display: grid; grid-template-columns: repeat(3, 1fr); gap: 2rem;
+            position: relative;
+        }
+        .steps::before {
+            content: ''; position: absolute; top: 40px; left: 15%; right: 15%;
+            height: 1px; background: linear-gradient(90deg, transparent, var(--border), transparent);
+        }
+        .step {
+            text-align: center; position: relative;
+        }
+        .step-number {
+            width: 56px; height: 56px; border-radius: 50%;
+            background: var(--surface); border: 2px solid var(--border);
+            display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 1.5rem; font-family: 'JetBrains Mono', monospace;
+            font-weight: 700; font-size: 1.1rem; color: var(--green);
+            position: relative; z-index: 1;
+            transition: all 0.3s;
+        }
+        .step:hover .step-number {
+            border-color: var(--green); box-shadow: 0 0 20px var(--green-dim);
+        }
+        .step h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.5rem; }
+        .step p { color: var(--text-muted); font-size: 0.85rem; }
+
+        /* ── Tech Stack ── */
+        .tech { padding: 6rem 0; }
+        .tech-grid {
+            display: flex; flex-wrap: wrap; justify-content: center; gap: 1rem;
+        }
+        .tech-tag {
+            display: inline-flex; align-items: center; gap: 0.5rem;
+            padding: 0.6rem 1.25rem; border: 1px solid var(--border);
+            border-radius: 100px; font-size: 0.8rem; color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+            transition: all 0.2s; background: var(--surface);
+        }
+        .tech-tag:hover { border-color: var(--green); color: var(--green); }
+        .tech-tag .tag-dot {
+            width: 6px; height: 6px; border-radius: 50%; background: var(--green); opacity: 0.5;
+        }
+
+        /* ── Requirements ── */
+        .requirements { padding: 6rem 0; }
+        .req-list {
+            max-width: 500px; margin: 0 auto;
+            display: flex; flex-direction: column; gap: 0.75rem;
+        }
+        .req-item {
+            display: flex; align-items: center; gap: 1rem;
+            padding: 1rem 1.5rem; border: 1px solid var(--border);
+            border-radius: 8px; background: var(--surface);
+            transition: all 0.2s;
+        }
+        .req-item:hover { border-color: var(--border-hover); }
+        .req-check {
+            width: 20px; height: 20px; border-radius: 50%;
+            background: var(--green-dim); border: 1px solid rgba(74,222,128,0.3);
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0;
+        }
+        .req-check svg { width: 10px; height: 10px; color: var(--green); }
+        .req-item span { font-size: 0.9rem; color: var(--text-muted); }
+
+        /* ── CTA ── */
+        .cta {
+            padding: 8rem 0; text-align: center;
+        }
+        .cta-box {
+            padding: 4rem 2rem; border: 1px solid var(--border);
+            border-radius: 16px; background: var(--surface);
+            position: relative; overflow: hidden;
+        }
+        .cta-box::before {
+            content: ''; position: absolute; top: -50%; left: -50%;
+            width: 200%; height: 200%;
+            background: radial-gradient(circle at 50% 100%, rgba(74,222,128,0.06) 0%, transparent 50%);
+            pointer-events: none;
+        }
+        .cta h2 {
+            font-size: clamp(1.8rem, 4vw, 2.5rem);
+            font-weight: 800; margin-bottom: 1rem;
+            letter-spacing: -0.02em; position: relative;
+        }
+        .cta p {
+            color: var(--text-muted); font-size: 1rem;
+            margin-bottom: 2rem; position: relative;
+        }
+        .cta .btn-primary { position: relative; font-size: 1rem; padding: 1rem 2.5rem; }
+
+        /* ── Footer ── */
+        footer {
+            padding: 3rem 0; border-top: 1px solid var(--border);
+            display: flex; justify-content: space-between; align-items: center;
+            font-size: 0.8rem; color: var(--text-dim);
+        }
+        footer a { color: var(--text-muted); text-decoration: none; transition: color 0.2s; }
+        footer a:hover { color: var(--green); }
+        .footer-links { display: flex; gap: 1.5rem; }
+
+        /* ── Scroll Animations ── */
+        .reveal {
+            opacity: 0; transform: translateY(30px);
+            transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .reveal.visible { opacity: 1; transform: translateY(0); }
+
+        /* ── Responsive ─ */
+        @media (max-width: 768px) {
+            .nav-links { display: none; }
+            .steps { grid-template-columns: 1fr; gap: 3rem; }
+            .steps::before { display: none; }
+            .features-grid { grid-template-columns: 1fr; }
+            footer { flex-direction: column; gap: 1rem; text-align: center; }
+            .hero h1 { font-size: 2.5rem; }
+        }
+
+        /* ── Scrollbar ── */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: var(--bg); }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
     </style>
 </head>
 <body>
+    <div class="bg-grid"></div>
+    <div class="bg-glow bg-glow-1"></div>
+    <div class="bg-glow bg-glow-2"></div>
+    <div class="noise"></div>
+
+    <!-- Nav -->
+    <nav>
+        <div class="nav-logo">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+            VELOCITY
+        </div>
+        <div class="nav-links">
+            <a href="#features">Features</a>
+            <a href="#how">How It Works</a>
+            <a href="#tech">Tech</a>
+            <a href="https://github.com/tasqlab/velocity-break" target="_blank">GitHub</a>
+            <a href="https://github.com/tasqlab/velocity-break/releases/latest" class="nav-btn">Download</a>
+        </div>
+    </nav>
+
+    <!-- Hero -->
+    <section class="hero">
+        <div class="hero-badge">
+            <span class="dot"></span>
+            v1.1.2 NOW AVAILABLE
+        </div>
+        <h1>Bypass DPI.<br><span class="gradient">Own Your DNS.</span></h1>
+        <p>A self-contained Windows tool that defeats deep packet inspection and gives you full control over your DNS — with encryption.</p>
+        <div class="hero-actions">
+            <a href="https://github.com/tasqlab/velocity-break/releases/latest" class="btn-primary">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" stroke="currentColor" stroke-width="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                Download for Windows
+            </a>
+            <a href="https://github.com/tasqlab/velocity-break" class="btn-secondary" target="_blank">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+                View Source
+            </a>
+        </div>
+        <div class="hero-version">Windows 10/11 x64 • 4.2 MB • No dependencies</div>
+    </section>
+
+    <!-- Terminal Preview -->
     <div class="container">
-        <header>
-            <h1>VELOCITY</h1>
-            <div class="tagline">DPI BYPASS // DNS MANAGER // WINDOWS</div>
-        </header>
+        <div class="terminal-preview">
+            <div class="terminal-bar">
+                <div class="terminal-dot r"></div>
+                <div class="terminal-dot y"></div>
+                <div class="terminal-dot g"></div>
+                <div class="terminal-title">velocity — powershell</div>
+            </div>
+            <div class="terminal-body">
+                <div><span class="prompt">PS C:\&gt;</span> <span class="cmd">.\Velocity_1.1.2_x64-setup.exe</span></div>
+                <div class="output">Installing Velocity v1.1.2...</div>
+                <div class="success">✓ Installation complete</div>
+                <br>
+                <div><span class="prompt">PS C:\&gt;</span> <span class="cmd">velocity</span></div>
+                <div class="output">[VELOCITY] Starting DPI bypass engine...</div>
+                <div class="success">[VELOCITY] Zapret active — mode: BEST</div>
+                <div class="success">[VELOCITY] DNS: Cloudflare 1.1.1.1 + DoH ✓</div>
+                <div><span class="prompt">PS C:\&gt;</span> <span class="terminal-cursor"></span></div>
+            </div>
+        </div>
+    </div>
 
-        <section>
-            <h2>Download</h2>
-            <p>A self-contained DPI bypass wrapper with integrated DNS management. No installation dependencies. Just run.</p>
-            <br>
-            <a class="download-btn" href="https://github.com/tasqlab/velocity-break/releases/latest">DOWNLOAD LATEST RELEASE</a>
-            <div class="version">Windows x64 • Requires Administrator</div>
-        </section>
-
-        <section>
-            <h2>Features</h2>
-            <div class="features">
-                <div class="feature-card">
-                    <div class="label">ZAPRET ENGINE</div>
-                    <div class="desc">Multi-strategy DPI desync with fake TLS, QUIC, and TCP splitting</div>
+    <!-- Features -->
+    <section class="features" id="features">
+        <div class="container">
+            <div class="section-header reveal">
+                <div class="section-label">Features</div>
+                <h2>Everything you need.<br>Nothing you don't.</h2>
+                <p>Purpose-built for one thing: getting you past DPI blocks, fast.</p>
+            </div>
+            <div class="features-grid">
+                <div class="feature-card reveal">
+                    <div class="feature-icon">🛡️</div>
+                    <h3>Multi-Strategy DPI Bypass</h3>
+                    <p>Fake TLS, QUIC desync, TCP splitting, badseq fooling — multiple evasion techniques running simultaneously for maximum compatibility.</p>
                 </div>
-                <div class="feature-card">
-                    <div class="label">DNS CONTROL</div>
-                    <div class="desc">One-click switching between Cloudflare, Quad9, Google, AdGuard, NextDNS</div>
+                <div class="feature-card reveal">
+                    <div class="feature-icon">🔒</div>
+                    <h3>DNS over HTTPS</h3>
+                    <p>Encrypt every DNS query through HTTPS tunnels. Your ISP can't see what domains you're resolving. One-click toggle.</p>
                 </div>
-                <div class="feature-card">
-                    <div class="label">MODE SELECTOR</div>
-                    <div class="desc">Best / All / Default / Custom profiles for different bypass needs</div>
+                <div class="feature-card reveal">
+                    <div class="feature-icon">🌐</div>
+                    <h3>One-Click DNS Switching</h3>
+                    <p>Cloudflare, Quad9, Google, AdGuard, NextDNS — or enter any custom DNS server. Instant switching with automatic cache flush.</p>
                 </div>
-                <div class="feature-card">
-                    <div class="label">SELF-CONTAINED</div>
-                    <div class="desc">All binaries, lists, and payloads bundled. No external deps</div>
+                <div class="feature-card reveal">
+                    <div class="feature-icon">⚡</div>
+                    <h3>Zero Dependencies</h3>
+                    <p>Single installer. All binaries, blocklists, and payloads bundled inside. No runtime downloads, no external tools needed.</p>
+                </div>
+                <div class="feature-card reveal">
+                    <div class="feature-icon">🖥️</div>
+                    <h3>System Tray Integration</h3>
+                    <p>Minimize to tray, live status tooltips, click to restore. Runs silently in the background while you work.</p>
+                </div>
+                <div class="feature-card reveal">
+                    <div class="feature-icon"></div>
+                    <h3>Modern Native UI</h3>
+                    <p>Built with Tauri + React. Not an Electron memory hog. Custom titlebar, glassmorphism panels, parallax world map background.</p>
                 </div>
             </div>
-        </section>
+        </div>
+    </section>
 
-        <section>
-            <h2>Requirements</h2>
-            <ul>
-                <li>Windows 10 / 11 (64-bit)</li>
-                <li>Administrator privileges</li>
-                <li>Microsoft Edge WebView2 Runtime (auto-installed)</li>
-            </ul>
-        </section>
+    <!-- How It Works -->
+    <section class="how-it-works" id="how">
+        <div class="container">
+            <div class="section-header reveal">
+                <div class="section-label">How It Works</div>
+                <h2>Three steps. That's it.</h2>
+            </div>
+            <div class="steps">
+                <div class="step reveal">
+                    <div class="step-number">1</div>
+                    <h3>Install</h3>
+                    <p>Download the installer, run it. UAC prompt confirms admin access. Done in 10 seconds.</p>
+                </div>
+                <div class="step reveal">
+                    <div class="step-number">2</div>
+                    <h3>Toggle On</h3>
+                    <p>Hit the power button. Pick your bypass mode. Zapret engine starts intercepting and desyncing packets instantly.</p>
+                </div>
+                <div class="step reveal">
+                    <div class="step-number">3</div>
+                    <h3>Browse Freely</h3>
+                    <p>Switch DNS providers, enable DoH encryption, and browse without DPI interference. Close to tray when done.</p>
+                </div>
+            </div>
+        </div>
+    </section>
 
-        <section>
-            <h2>Building from Source</h2>
-            <pre><code># Prerequisites: Node.js, Rust, Visual Studio Build Tools
+    <!-- Tech Stack -->
+    <section class="tech" id="tech">
+        <div class="container">
+            <div class="section-header reveal">
+                <div class="section-label">Built With</div>
+                <h2>Modern stack.<br>Native performance.</h2>
+            </div>
+            <div class="tech-grid reveal">
+                <div class="tech-tag"><span class="tag-dot"></span>Tauri v2</div>
+                <div class="tech-tag"><span class="tag-dot"></span>Rust</div>
+                <div class="tech-tag"><span class="tag-dot"></span>React</div>
+                <div class="tech-tag"><span class="tag-dot"></span>TypeScript</div>
+                <div class="tech-tag"><span class="tag-dot"></span>Tailwind CSS v4</div>
+                <div class="tech-tag"><span class="tag-dot"></span>Zapret / winws</div>
+                <div class="tech-tag"><span class="tag-dot"></span>WinDivert</div>
+                <div class="tech-tag"><span class="tag-dot"></span>WebView2</div>
+            </div>
+        </div>
+    </section>
 
-git clone https://github.com/tasqlab/velocity-break.git
-cd velocity-break
-npm install
-npm run tauri dev      # Development
-npm run tauri build    # Production installer</code></pre>
-        </section>
+    <!-- Requirements -->
+    <section class="requirements">
+        <div class="container">
+            <div class="section-header reveal">
+                <div class="section-label">Requirements</div>
+                <h2>Minimal.</h2>
+            </div>
+            <div class="req-list reveal">
+                <div class="req-item">
+                    <div class="req-check"><svg viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="3" strokeLinecap="round" strokeLinejoin="round"/></svg></div>
+                    <span>Windows 10 / 11 (64-bit)</span>
+                </div>
+                <div class="req-item">
+                    <div class="req-check"><svg viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="3" strokeLinecap="round" strokeLinejoin="round"/></svg></div>
+                    <span>Administrator privileges</span>
+                </div>
+                <div class="req-item">
+                    <div class="req-check"><svg viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="3" strokeLinecap="round" strokeLinejoin="round"/></svg></div>
+                    <span>Microsoft Edge WebView2 Runtime (auto-installed)</span>
+                </div>
+            </div>
+        </div>
+    </section>
 
-        <section>
-            <h2>Tech Stack</h2>
-            <ul>
-                <li>Tauri v2 (Rust backend)</li>
-                <li>React + TypeScript frontend</li>
-                <li>Tailwind CSS v4</li>
-                <li>Zapret / winws DPI bypass engine</li>
-            </ul>
-        </section>
+    <!-- CTA -->
+    <section class="cta">
+        <div class="container">
+            <div class="cta-box reveal">
+                <h2>Ready to take back<br>your connection?</h2>
+                <p>Free, open-source, and built for Windows.</p>
+                <a href="https://github.com/tasqlab/velocity-break/releases/latest" class="btn-primary">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" stroke="currentColor" stroke-width="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                    Download Velocity v1.1.2
+                </a>
+            </div>
+        </div>
+    </section>
 
+    <!-- Footer -->
+    <div class="container">
         <footer>
-            <span>© 2026 tasqlab</span>
-            <a href="https://github.com/tasqlab/velocity-break">GitHub</a>
+            <span>© 2026 tasqlab • MIT License</span>
+            <div class="footer-links">
+                <a href="https://github.com/tasqlab/velocity-break" target="_blank">GitHub</a>
+                <a href="https://github.com/tasqlab/velocity-break/issues" target="_blank">Issues</a>
+                <a href="https://github.com/tasqlab/velocity-break/releases" target="_blank">Releases</a>
+            </div>
         </footer>
     </div>
+
+    <script>
+        // Scroll reveal
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                }
+            });
+        }, { threshold: 0.1 });
+
+        document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+        // Smooth parallax on hero glow
+        document.addEventListener('mousemove', (e) => {
+            const x = (e.clientX / window.innerWidth - 0.5) * 20;
+            const y = (e.clientY / window.innerHeight - 0.5) * 20;
+            document.querySelector('.bg-glow-1').style.transform = `translateX(calc(-50% + ${x}px)) translateY(${y}px)`;
+        });
+    </script>
 </body>
 </html>
