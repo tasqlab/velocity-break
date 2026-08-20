@@ -1,10 +1,17 @@
 {
   "identifier": "default",
-  "description": "Capability for the main window",
+  "description": "Full access for Velocity",
   "windows": ["main"],
   "permissions": [
     "core:default",
     "core:path:default",
-    "core:resources:default"
+    "core:resources:default",
+    "core:window:default",
+    "core:window:allow-minimize",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "core:window:allow-close",
+    "core:app:default"
   ]
 }

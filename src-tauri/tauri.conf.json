@@ -1,6 +1,6 @@
 {
   "productName": "Velocity",
-  "version": "0.1.1",
+  "version": "1.1.2",
   "identifier": "com.chazq.velocity",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -9,20 +9,22 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [
-      {
-        "title": "Velocity",
-        "width": 800,
-        "height": 600,
-        "resizable": true,
-        "fullscreen": false,
-        "center": true
-      }
-    ],
-    "security": {
-      "csp": null
+  "windows": [
+    {
+      "title": "Velocity",
+      "width": 400,
+      "height": 620,
+      "minWidth": 400,
+      "minHeight": 620,
+      "resizable": true,
+      "fullscreen": false,
+      "center": true,
+      "decorations": false,
+      "transparent": false,
+      "backgroundColor": "#050505"
     }
-  },
+  ]
+},
   "bundle": {
     "active": true,
     "targets": "all",
@@ -33,14 +35,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": ["bin/**/*"],
+    "resources": [
+      "bin/*",
+      "bin/lists/*"
+    ],
     "windows": {
-      "webviewInstallMode": {
-        "type": "downloadBootstrapper"
-      },
-      "nsis": {
-        "installMode": "both"
-      }
+      "webviewInstallMode": { "type": "downloadBootstrapper" },
+      "nsis": { "installMode": "both" }
     }
   }
 }

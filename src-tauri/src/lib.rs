@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Manager;
+use tauri::menu::{MenuBuilder, MenuItemBuilder};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use std::io::Read; // ADD THIS
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -8,11 +12,16 @@ use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+// Global source of truth for Zapret state
+static ZAPRET_RUNNING: AtomicBool = AtomicBool::new(false);
+
+/* ── Types ── */
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct DnsProfile {
     pub name: String,
     pub primary: String,
     pub secondary: String,
+    pub doh_url: String,
 }
 
 #[derive(Serialize)]
@@ -20,325 +29,305 @@ pub struct AppStatus {
     pub zapret_running: bool,
     pub is_admin: bool,
     pub current_dns: String,
+    pub doh_active: bool,
 }
 
+/* ── DNS Profiles ── */
 fn get_dns_profiles() -> Vec<DnsProfile> {
     vec![
-        DnsProfile { name: "Cloudflare".into(), primary: "1.1.1.1".into(), secondary: "1.0.0.1".into() },
-        DnsProfile { name: "Quad9".into(), primary: "9.9.9.9".into(), secondary: "149.112.112.112".into() },
-        DnsProfile { name: "Google".into(), primary: "8.8.8.8".into(), secondary: "8.8.4.4".into() },
-        DnsProfile { name: "AdGuard".into(), primary: "94.140.14.14".into(), secondary: "94.140.15.15".into() },
-        DnsProfile { name: "NextDNS".into(), primary: "45.90.28.0".into(), secondary: "45.90.30.0".into() },
+        DnsProfile { name: "Cloudflare".into(), primary: "1.1.1.1".into(), secondary: "1.0.0.1".into(), doh_url: "https://cloudflare-dns.com/dns-query".into() },
+        DnsProfile { name: "Quad9".into(), primary: "9.9.9.9".into(), secondary: "149.112.112.112".into(), doh_url: "https://dns.quad9.net/dns-query".into() },
+        DnsProfile { name: "Google".into(), primary: "8.8.8.8".into(), secondary: "8.8.4.4".into(), doh_url: "https://dns.google/dns-query".into() },
+        DnsProfile { name: "AdGuard".into(), primary: "94.140.14.14".into(), secondary: "94.140.15.15".into(), doh_url: "https://dns.adguard-dns.com/dns-query".into() },
+        DnsProfile { name: "NextDNS".into(), primary: "45.90.28.0".into(), secondary: "45.90.30.0".into(), doh_url: "https://dns.nextdns.io".into() },
     ]
 }
 
+/* ── Helpers ── */
 fn get_active_interface() -> Result<String, String> {
-    let os = std::env::consts::OS;
-    if os == "windows" {
-        let ps_cmd = "Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} | Select-Object -ExpandProperty Name -First 1";
-        let mut cmd = Command::new("powershell");
-        cmd.args(&["-Command", ps_cmd]);
-        #[cfg(windows)]
-        cmd.creation_flags(CREATE_NO_WINDOW);
-        let output = cmd.output().map_err(|e| e.to_string())?;
-
-        let interface = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if interface.is_empty() {
-            return Err("No active network interface found".into());
-        }
-        Ok(interface)
-    } else if os == "macos" {
-        Ok("Wi-Fi".into())
-    } else {
-        Err("Unsupported OS for automatic interface detection".into())
+    #[cfg(windows)]
+    {
+        let ps = "Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} | Select-Object -ExpandProperty Name -First 1";
+        let out = Command::new("powershell")
+            .args(&["-Command", ps])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .map_err(|e| e.to_string())?;
+        let iface = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if iface.is_empty() { return Err("No active network interface".into()); }
+        Ok(iface)
     }
+    #[cfg(not(windows))]
+    { Ok("Wi-Fi".into()) }
 }
 
+/* ── Commands ── */
 #[tauri::command]
-fn get_dns_options() -> Vec<DnsProfile> {
-    get_dns_profiles()
-}
+fn get_dns_options() -> Vec<DnsProfile> { get_dns_profiles() }
 
 #[tauri::command]
-fn set_dns(profile_name: String) -> Result<String, String> {
+fn set_dns(profile_name: String, use_doh: bool) -> Result<String, String> {
     let profiles = get_dns_profiles();
-    let profile = profiles.iter().find(|p| p.name == profile_name)
-        .ok_or("DNS Profile not found")?;
-
+    let profile = profiles.iter().find(|p| p.name == profile_name).ok_or("DNS Profile not found")?;
     let interface = get_active_interface()?;
-    let os = std::env::consts::OS;
 
-    if os == "windows" {
-        // Set Primary DNS
-        let mut cmd1 = Command::new("netsh");
-        cmd1.args(&["interface", "ip", "set", "dns", &format!("name={}", interface), "static", &profile.primary, "primary"]);
-        #[cfg(windows)]
-        cmd1.creation_flags(CREATE_NO_WINDOW);
-        let _ = cmd1.output();
+    #[cfg(windows)]
+    {
+        let _ = Command::new("netsh").args(&["interface", "ip", "set", "dns", &format!("name={}", interface), "static", &profile.primary, "primary"]).creation_flags(CREATE_NO_WINDOW).output();
+        let _ = Command::new("netsh").args(&["interface", "ip", "add", "dns", &format!("name={}", interface), &profile.secondary, "index=2"]).creation_flags(CREATE_NO_WINDOW).output();
 
-        // Set Secondary DNS
-        let mut cmd2 = Command::new("netsh");
-        cmd2.args(&["interface", "ip", "add", "dns", &format!("name={}", interface), &profile.secondary, "index=2"]);
-        #[cfg(windows)]
-        cmd2.creation_flags(CREATE_NO_WINDOW);
-        let _ = cmd2.output();
-
-        // Flush DNS cache
-        let mut cmd3 = Command::new("ipconfig");
-        cmd3.args(&["/flushdns"]);
-        #[cfg(windows)]
-        cmd3.creation_flags(CREATE_NO_WINDOW);
-        let _ = cmd3.output();
-
-    } else if os == "macos" {
-        let _ = Command::new("networksetup")
-            .args(&["-setdnsservers", &interface, &profile.primary, &profile.secondary])
-            .output();
-        let _ = Command::new("dscacheutil").args(&["-flushcache"]).output();
+        if use_doh {
+            let ps = format!("Add-DnsClientDohServerAddress -ServerAddress '{}' -DohTemplate '{}' -AllowFallbackToUdp $false -AutoUpgrade $true; Add-DnsClientDohServerAddress -ServerAddress '{}' -DohTemplate '{}' -AllowFallbackToUdp $false -AutoUpgrade $true", profile.primary, profile.doh_url, profile.secondary, profile.doh_url);
+            let _ = Command::new("powershell").args(&["-Command", &ps]).creation_flags(CREATE_NO_WINDOW).output();
+        } else {
+            let ps = format!("Remove-DnsClientDohServerAddress -ServerAddress '{}' -Confirm:$false -ErrorAction SilentlyContinue; Remove-DnsClientDohServerAddress -ServerAddress '{}' -Confirm:$false -ErrorAction SilentlyContinue", profile.primary, profile.secondary);
+            let _ = Command::new("powershell").args(&["-Command", &ps]).creation_flags(CREATE_NO_WINDOW).output();
+        }
+        let _ = Command::new("ipconfig").args(&["/flushdns"]).creation_flags(CREATE_NO_WINDOW).output();
     }
+    Ok(format!("Applied {} DNS{}", profile_name, if use_doh { " + DoH" } else { "" }))
+}
 
-    Ok(format!("Successfully applied {} DNS", profile_name))
+#[tauri::command]
+fn set_custom_dns(primary: String, secondary: String, doh_url: String) -> Result<String, String> {
+    if primary.parse::<std::net::IpAddr>().is_err() { return Err(format!("Invalid DNS: {}", primary)); }
+    let interface = get_active_interface()?;
+
+    #[cfg(windows)]
+    {
+        let _ = Command::new("netsh").args(&["interface", "ip", "set", "dns", &format!("name={}", interface), "static", &primary, "primary"]).creation_flags(CREATE_NO_WINDOW).output();
+        if !secondary.is_empty() {
+            let _ = Command::new("netsh").args(&["interface", "ip", "add", "dns", &format!("name={}", interface), &secondary, "index=2"]).creation_flags(CREATE_NO_WINDOW).output();
+        }
+        if !doh_url.is_empty() {
+            let ps = format!("Add-DnsClientDohServerAddress -ServerAddress '{}' -DohTemplate '{}' -AllowFallbackToUdp $false -AutoUpgrade $true", primary, doh_url);
+            let _ = Command::new("powershell").args(&["-Command", &ps]).creation_flags(CREATE_NO_WINDOW).output();
+        }
+        let _ = Command::new("ipconfig").args(&["/flushdns"]).creation_flags(CREATE_NO_WINDOW).output();
+    }
+    Ok(format!("Custom DNS applied: {}", primary))
+}
+
+#[tauri::command]
+fn reset_dns() -> Result<String, String> {
+    let interface = get_active_interface()?;
+    #[cfg(windows)]
+    {
+        let _ = Command::new("powershell").args(&["-Command", "Get-DnsClientDohServerAddress | Remove-DnsClientDohServerAddress -Confirm:$false -ErrorAction SilentlyContinue"]).creation_flags(CREATE_NO_WINDOW).output();
+        let _ = Command::new("netsh").args(&["interface", "ip", "set", "dns", &format!("name={}", interface), "dhcp"]).creation_flags(CREATE_NO_WINDOW).output();
+        let _ = Command::new("ipconfig").args(&["/flushdns"]).creation_flags(CREATE_NO_WINDOW).output();
+    }
+    Ok("DNS reset to DHCP".into())
 }
 
 #[tauri::command]
 fn toggle_zapret(app: tauri::AppHandle, enable: bool, mode: String) -> Result<String, String> {
-    let os = std::env::consts::OS;
-
-    if os == "windows" {
+    #[cfg(windows)]
+    {
         let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
         let bin_dir = resource_dir.join("bin");
-        let lists_dir = bin_dir.join("lists");
-
         let exe_name = "winws.exe";
         let exe_path = bin_dir.join(exe_name);
 
-        if !exe_path.exists() {
-            return Err(format!("Binary '{}' not found in bundled resources.", exe_name));
-        }
+        if !exe_path.exists() { return Err(format!("Binary '{}' not found at {}", exe_name, exe_path.display())); }
 
         if enable {
-            let list_general = lists_dir.join("list-general.txt");
-            let list_general_user = lists_dir.join("list-general-user.txt");
-            let list_exclude = lists_dir.join("list-exclude.txt");
-            let list_exclude_user = lists_dir.join("list-exclude-user.txt");
-            let ipset_exclude = lists_dir.join("ipset-exclude.txt");
-            let ipset_exclude_user = lists_dir.join("ipset-exclude-user.txt");
-            let list_google = lists_dir.join("list-google.txt");
-            let ipset_all = lists_dir.join("ipset-all.txt");
-
-            let quic_google = bin_dir.join("quic_initial_www_google_com.bin");
-            let quic_dbank = bin_dir.join("quic_initial_dbankcloud_ru.bin");
-            let tls_fake = bin_dir.join("tls_clienthello_max_ru.bin");
-
-            let p = |path: &std::path::Path| path.display().to_string();
-
-            let game_tcp = "";
-            let game_udp = "";
-
+            // Use RELATIVE paths. winws.exe will look for these inside current_dir (which is bin_dir)
             let args: Vec<String> = match mode.as_str() {
                 "best" => vec![
-                    "--wf-tcp=80,443".into(),
-                    "--wf-udp=443".into(),
-                    "--dpi-desync=fake,fakedsplit".into(),
-                    "--dpi-desync-split-pos=1".into(),
-                    "--dpi-desync-fooling=badseq".into(),
-                    "--dpi-desync-repeats=8".into(),
-                    "--dpi-desync-fake-tls-mod=rnd,dupsid,sni=www.google.com".into(),
+                    "--wf-tcp=80,443".into(), 
+                    "--wf-udp=443".into(), 
+                    "--hostlist=lists/list-general.txt".into(), 
+                    "--hostlist-exclude=lists/list-exclude.txt".into(), 
+                    "--dpi-desync=fake,fakedsplit".into(), 
+                    "--dpi-desync-split-pos=1".into(), 
+                    "--dpi-desync-fooling=badseq".into(), 
+                    "--dpi-desync-repeats=8".into(), 
+                    "--dpi-desync-fake-tls-mod=rnd,dupsid,sni=www.google.com".into()
                 ],
                 "all" => vec![
-                    format!("--wf-tcp=80,443,2053,2083,2087,2096,8443,{}", game_tcp),
-                    format!("--wf-udp=443,19294-19344,50000-50100,{}", game_udp),
-                    "--filter-udp=443".into(),
-                    format!("--hostlist={}", p(&list_general)),
-                    format!("--hostlist={}", p(&list_general_user)),
-                    format!("--hostlist-exclude={}", p(&list_exclude)),
-                    format!("--hostlist-exclude={}", p(&list_exclude_user)),
-                    format!("--ipset-exclude={}", p(&ipset_exclude)),
-                    format!("--ipset-exclude={}", p(&ipset_exclude_user)),
-                    "--dpi-desync=fake".into(),
-                    "--dpi-desync-repeats=11".into(),
-                    format!("--dpi-desync-fake-quic={}", p(&quic_google)),
-                    "--new".into(),
-                    "--filter-udp=19294-19344,50000-50100".into(),
-                    "--filter-l7=discord,stun".into(),
-                    "--dpi-desync=fake".into(),
-                    format!("--dpi-desync-fake-discord={}", p(&quic_dbank)),
-                    format!("--dpi-desync-fake-stun={}", p(&quic_dbank)),
-                    "--dpi-desync-repeats=6".into(),
-                    "--new".into(),
-                    "--filter-tcp=2053,2083,2087,2096,8443".into(),
-                    "--hostlist-domains=discord.media".into(),
-                    "--dpi-desync=fake,fakedsplit".into(),
-                    "--dpi-desync-split-pos=1".into(),
-                    "--dpi-desync-fooling=badseq".into(),
-                    "--dpi-desync-badseq-increment=2".into(),
-                    "--dpi-desync-repeats=8".into(),
-                    "--dpi-desync-fake-tls-mod=rnd,dupsid,sni=www.google.com".into(),
-                    "--new".into(),
-                    "--filter-tcp=443".into(),
-                    format!("--hostlist={}", p(&list_google)),
-                    "--ip-id=zero".into(),
-                    "--dpi-desync=fake,fakedsplit".into(),
-                    "--dpi-desync-split-pos=1".into(),
-                    "--dpi-desync-fooling=badseq".into(),
-                    "--dpi-desync-badseq-increment=2".into(),
-                    "--dpi-desync-repeats=8".into(),
-                    "--dpi-desync-fake-tls-mod=rnd,dupsid,sni=www.google.com".into(),
-                    "--new".into(),
-                    "--filter-tcp=80,443".into(),
-                    format!("--hostlist={}", p(&list_general)),
-                    format!("--hostlist={}", p(&list_general_user)),
-                    format!("--hostlist-exclude={}", p(&list_exclude)),
-                    format!("--hostlist-exclude={}", p(&list_exclude_user)),
-                    format!("--ipset-exclude={}", p(&ipset_exclude)),
-                    format!("--ipset-exclude={}", p(&ipset_exclude_user)),
-                    "--dpi-desync=fake,fakedsplit".into(),
-                    "--dpi-desync-split-pos=1".into(),
-                    "--dpi-desync-fooling=badseq".into(),
-                    "--dpi-desync-badseq-increment=2".into(),
-                    "--dpi-desync-repeats=8".into(),
-                    "--dpi-desync-fake-tls-mod=rnd,dupsid,sni=www.google.com".into(),
-                    format!("--dpi-desync-fake-http={}", p(&tls_fake)),
-                    "--new".into(),
-                    "--filter-udp=443".into(),
-                    format!("--ipset={}", p(&ipset_all)),
-                    format!("--hostlist-exclude={}", p(&list_exclude)),
-                    format!("--hostlist-exclude={}", p(&list_exclude_user)),
-                    format!("--ipset-exclude={}", p(&ipset_exclude)),
-                    format!("--ipset-exclude={}", p(&ipset_exclude_user)),
-                    "--dpi-desync=fake".into(),
-                    "--dpi-desync-repeats=11".into(),
-                    format!("--dpi-desync-fake-quic={}", p(&quic_google)),
-                    "--new".into(),
-                    "--filter-tcp=80,443,8443".into(),
-                    format!("--ipset={}", p(&ipset_all)),
-                    format!("--hostlist-exclude={}", p(&list_exclude)),
-                    format!("--hostlist-exclude={}", p(&list_exclude_user)),
-                    format!("--ipset-exclude={}", p(&ipset_exclude)),
-                    format!("--ipset-exclude={}", p(&ipset_exclude_user)),
-                    "--dpi-desync=fake,fakedsplit".into(),
-                    "--dpi-desync-split-pos=1".into(),
-                    "--dpi-desync-fooling=badseq".into(),
-                    "--dpi-desync-badseq-increment=2".into(),
-                    "--dpi-desync-repeats=8".into(),
-                    "--dpi-desync-fake-tls-mod=rnd,dupsid,sni=www.google.com".into(),
-                    format!("--dpi-desync-fake-http={}", p(&tls_fake)),
-                    "--new".into(),
-                    format!("--filter-tcp={}", game_tcp),
-                    format!("--ipset={}", p(&ipset_all)),
-                    format!("--ipset-exclude={}", p(&ipset_exclude)),
-                    format!("--ipset-exclude={}", p(&ipset_exclude_user)),
-                    "--dpi-desync=fake,fakedsplit".into(),
-                    "--dpi-desync-any-protocol=1".into(),
-                    "--dpi-desync-cutoff=n3".into(),
-                    "--dpi-desync-split-pos=1".into(),
-                    "--dpi-desync-fooling=badseq".into(),
-                    "--dpi-desync-badseq-increment=2".into(),
-                    "--dpi-desync-repeats=8".into(),
-                    "--dpi-desync-fake-tls-mod=rnd,dupsid,sni=www.google.com".into(),
-                    format!("--dpi-desync-fake-http={}", p(&tls_fake)),
-                    "--new".into(),
-                    format!("--filter-udp={}", game_udp),
-                    format!("--ipset={}", p(&ipset_all)),
-                    format!("--ipset-exclude={}", p(&list_exclude)),
-                    format!("--ipset-exclude={}", p(&list_exclude_user)),
-                    "--dpi-desync=fake".into(),
-                    "--dpi-desync-repeats=10".into(),
-                    "--dpi-desync-any-protocol=1".into(),
-                    format!("--dpi-desync-fake-unknown-udp={}", p(&quic_dbank)),
-                    "--dpi-desync-cutoff=n2".into(),
-                ],
-                "default" => vec![
-                    "--wf-tcp=80,443".into(),
-                    "--wf-udp=443".into(),
-                    "--dpi-desync=fake,multidisorder".into(),
-                    "--dpi-desync-split-pos=midsld".into(),
-                    "--dpi-desync-repeats=6".into(),
+                    "--wf-tcp=80,443,2053,2083,2087,2096,8443".into(), 
+                    "--wf-udp=443,19294-19344,50000-50100".into(), 
+                    "--hostlist=lists/list-general.txt".into(), 
+                    "--hostlist-exclude=lists/list-exclude.txt".into(), 
+                    "--dpi-desync=fake,fakedsplit,multidisorder".into(), 
+                    "--dpi-desync-split-pos=midsld,1".into(), 
+                    "--dpi-desync-fooling=badseq".into(), 
+                    "--dpi-desync-repeats=11".into(), 
+                    "--dpi-desync-any-protocol=1".into(), 
+                    "--dpi-desync-fake-tls-mod=rnd,dupsid,sni=www.google.com".into()
                 ],
                 _ => vec![
-                    "--wf-tcp=80,443".into(),
-                    "--dpi-desync=fake".into(),
-                    "--dpi-desync-repeats=8".into(),
+                    "--wf-tcp=80,443".into(), 
+                    "--wf-udp=443".into(), 
+                    "--dpi-desync=fake,multidisorder".into(), 
+                    "--dpi-desync-split-pos=midsld".into(), 
+                    "--dpi-desync-repeats=6".into()
                 ],
             };
 
             let mut cmd = Command::new(&exe_path);
-            cmd.args(&args).current_dir(&bin_dir);
-            #[cfg(windows)]
-            cmd.creation_flags(CREATE_NO_WINDOW);
-            cmd.spawn().map_err(|e| format!("Failed to start winws: {}", e))?;
+            cmd.args(&args)
+               .current_dir(&bin_dir) // Force working directory to target/debug/bin/
+               .stdout(std::process::Stdio::piped())
+               .stderr(std::process::Stdio::piped());
 
-            Ok(format!("Zapret started [{}]", mode.to_uppercase()))
+            #[cfg(windows)] cmd.creation_flags(CREATE_NO_WINDOW);
+            
+            let mut child = cmd.spawn().map_err(|e| format!("Failed to start: {}", e))?;
+            
+            // Wait 1 second to see if it crashes immediately
+            std::thread::sleep(std::time::Duration::from_millis(1000));
+
+            match child.try_wait() {
+                Ok(Some(_status)) => {
+                    // IT CRASHED! Read the error output
+                    let mut stderr_output = String::new();
+                    if let Some(mut stderr) = child.stderr.take() {
+                        let _ = stderr.read_to_string(&mut stderr_output);
+                    }
+                    let err_msg = if stderr_output.is_empty() { 
+                        "Process exited immediately (Check WinDivert.dll / Admin rights)".into() 
+                    } else { 
+                        stderr_output.trim().to_string() 
+                    };
+                    return Err(format!("Zapret crashed: {}", err_msg));
+                }
+                Ok(None) => {
+                    // Still running, success!
+                    ZAPRET_RUNNING.store(true, Ordering::SeqCst);
+                    if let Some(tray) = app.tray_by_id("velocity_tray") {
+                        let _ = tray.set_tooltip(Some("Velocity - DPI Bypass (ACTIVE)"));
+                    }
+                    Ok(format!("Zapret started [{}]", mode.to_uppercase()))
+                }
+                Err(e) => Err(format!("Error checking process: {}", e))
+            }
         } else {
-            let mut kill_cmd = Command::new("taskkill");
-            kill_cmd.args(&["/F", "/IM", exe_name]);
-            #[cfg(windows)]
-            kill_cmd.creation_flags(CREATE_NO_WINDOW);
-            let _ = kill_cmd.output();
+            let mut k = Command::new("taskkill");
+            k.args(&["/F", "/IM", exe_name]);
+            #[cfg(windows)] k.creation_flags(CREATE_NO_WINDOW);
+            let _ = k.output();
+            
+            ZAPRET_RUNNING.store(false, Ordering::SeqCst);
+            
+            if let Some(tray) = app.tray_by_id("velocity_tray") {
+                let _ = tray.set_tooltip(Some("Velocity - DPI Bypass (Inactive)"));
+            }
             Ok("Zapret stopped".into())
         }
-    } else {
-        Err("macOS support requires manual pf/tpws configuration".into())
     }
+    #[cfg(not(windows))]
+    { let _ = (app, enable, mode); Err("macOS not supported".into()) }
 }
 
 #[tauri::command]
 fn check_status() -> Result<AppStatus, String> {
-    let os = std::env::consts::OS;
-    let mut zapret_running = false;
+    let mut zapret_running = ZAPRET_RUNNING.load(Ordering::SeqCst);
     let mut is_admin = false;
     let mut current_dns = "Unknown".to_string();
+    let mut doh_active = false;
 
-    if os == "windows" {
-        // Check Admin Privileges
-        let mut whoami_cmd = Command::new("whoami");
-        whoami_cmd.args(&["/groups"]);
-        #[cfg(windows)]
-        whoami_cmd.creation_flags(CREATE_NO_WINDOW);
-        if let Ok(output) = whoami_cmd.output() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            is_admin = stdout.contains("S-1-16-12288");
+    #[cfg(windows)]
+    {
+        if let Ok(out) = Command::new("tasklist").args(&["/FI", "IMAGENAME eq winws.exe"]).creation_flags(CREATE_NO_WINDOW).output() {
+            let output = String::from_utf8_lossy(&out.stdout);
+            if output.contains("winws.exe") {
+                zapret_running = true;
+                ZAPRET_RUNNING.store(true, Ordering::SeqCst);
+            } else {
+                zapret_running = false;
+                ZAPRET_RUNNING.store(false, Ordering::SeqCst);
+            }
         }
 
-        // Check if winws is running
-        let exe_name = "winws.exe";
-        let mut tasklist_cmd = Command::new("tasklist");
-        tasklist_cmd.args(&["/FI", &format!("IMAGENAME eq {}", exe_name)]);
-        #[cfg(windows)]
-        tasklist_cmd.creation_flags(CREATE_NO_WINDOW);
-        if let Ok(output) = tasklist_cmd.output() {
-            zapret_running = String::from_utf8_lossy(&output.stdout).contains(exe_name);
+        if let Ok(out) = Command::new("whoami").args(&["/groups"]).creation_flags(CREATE_NO_WINDOW).output() {
+            is_admin = String::from_utf8_lossy(&out.stdout).contains("S-1-16-12288");
         }
 
-        // Get Current DNS
-        if let Ok(interface) = get_active_interface() {
-            let mut dns_cmd = Command::new("netsh");
-            dns_cmd.args(&["interface", "ip", "show", "dns", &format!("name={}", interface)]);
-            #[cfg(windows)]
-            dns_cmd.creation_flags(CREATE_NO_WINDOW);
-            if let Ok(output) = dns_cmd.output() {
-                let stdout = String::from_utf8_lossy(&output.stdout);
+        if let Ok(iface) = get_active_interface() {
+            if let Ok(out) = Command::new("netsh").args(&["interface", "ip", "show", "dns", &format!("name={}", iface)]).creation_flags(CREATE_NO_WINDOW).output() {
+                let stdout = String::from_utf8_lossy(&out.stdout);
                 if let Some(line) = stdout.lines().find(|l| l.contains("DNS Servers")) {
-                    let parts: Vec<&str> = line.split_whitespace().collect();
-                    if let Some(ip) = parts.last() {
-                        current_dns = ip.to_string();
-                    }
+                    if let Some(ip) = line.split_whitespace().last() { current_dns = ip.to_string(); }
                 }
             }
         }
-    }
 
-    Ok(AppStatus { zapret_running, is_admin, current_dns })
+        if let Ok(out) = Command::new("powershell").args(&["-Command", "(Get-DnsClientDohServerAddress -ErrorAction SilentlyContinue).Count"]).creation_flags(CREATE_NO_WINDOW).output() {
+            let count_str = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            doh_active = count_str != "0" && !count_str.is_empty();
+        }
+    }
+    Ok(AppStatus { zapret_running, is_admin, current_dns, doh_active })
 }
 
+#[tauri::command]
+fn minimize_window(window: tauri::Window) { let _ = window.minimize(); }
+
+#[tauri::command]
+fn hide_to_tray(window: tauri::Window) { let _ = window.hide(); }
+
+#[tauri::command]
+fn set_autostart(enable: bool) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use winreg::enums::*;
+        use winreg::RegKey;
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let path = r"Software\Microsoft\Windows\CurrentVersion\Run";
+        let (key, _) = hkcu.create_subkey(path).map_err(|e| format!("Registry error: {}", e))?;
+        if enable {
+            let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+            key.set_value("Velocity", &exe.to_string_lossy().to_string()).map_err(|e| e.to_string())?;
+        } else {
+            let _ = key.delete_value("Velocity");
+        }
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    { let _ = enable; Err("Auto-start only supported on Windows".into()) }
+}
+
+/* ── App entry ── */
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .setup(|app| {
+            let show_item = MenuItemBuilder::new("Show Velocity").id("show").build(app)?;
+            let quit_item = MenuItemBuilder::new("Quit").id("quit").build(app)?;
+            let tray_menu = MenuBuilder::new(app).item(&show_item).separator().item(&quit_item).build()?;
+
+            // FIX: Use with_id() instead of new().id()
+            let _tray = TrayIconBuilder::with_id("velocity_tray")
+                .icon(app.default_window_icon().unwrap().clone())
+                .menu(&tray_menu)
+                .tooltip("Velocity - DPI Bypass (Inactive)")
+                .on_menu_event(|app, event| {
+                    match event.id.as_ref() {
+                        "show" => { if let Some(w) = app.get_webview_window("main") { let _ = w.show(); let _ = w.set_focus(); } }
+                        "quit" => { app.exit(0); }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+                        let app = tray.app_handle();
+                        if let Some(w) = app.get_webview_window("main") { let _ = w.show(); let _ = w.set_focus(); }
+                    }
+                })
+                .build(app)?;
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let _ = window.hide();
+                api.prevent_close();
+            }
+        })
         .invoke_handler(tauri::generate_handler![
-            get_dns_options,
-            set_dns,
-            toggle_zapret,
-            check_status
+            get_dns_options, set_dns, set_custom_dns, reset_dns,
+            toggle_zapret, check_status, minimize_window, hide_to_tray, set_autostart
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
