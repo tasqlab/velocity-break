@@ -9,22 +9,24 @@
     "frontendDist": "../dist"
   },
   "app": {
-  "windows": [
-    {
-      "title": "Velocity",
-      "width": 400,
-      "height": 620,
-      "minWidth": 400,
-      "minHeight": 620,
-      "resizable": true,
-      "fullscreen": false,
-      "center": true,
-      "decorations": false,
-      "transparent": false,
-      "backgroundColor": "#050505"
+    "windows": [
+      {
+        "title": "Velocity",
+        "width": 400,
+        "height": 620,
+        "minWidth": 400,
+        "minHeight": 620,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true,
+        "decorations": false,
+        "transparent": false
+      }
+    ],
+    "security": {
+      "csp": null
     }
-  ]
-},
+  },
   "bundle": {
     "active": true,
     "targets": "all",
@@ -35,13 +37,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [
-      "bin/*",
-      "bin/lists/*"
-    ],
+    "resources": ["bin/*", "bin/lists/*"],
     "windows": {
       "webviewInstallMode": { "type": "downloadBootstrapper" },
-      "nsis": { "installMode": "both" }
+      "nsis": { "installMode": "both" },
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": ""
     }
   }
 }

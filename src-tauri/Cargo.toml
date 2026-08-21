@@ -16,7 +16,6 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2.0.0", features = [] }
-winres = "0.1"
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon"] }
@@ -29,6 +28,3 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(mobile)'] }
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["shellscalingapi"] }
-
-[target.'cfg(windows)'.build-dependencies]
-winres = "0.1"
