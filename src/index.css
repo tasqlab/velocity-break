@@ -3,8 +3,8 @@
 /* ── Reset ── */
 * {
   box-sizing: border-box;
-  margin: 10;
-  padding: 10;
+  margin: 0;
+  padding: 0;
 }
 
 html, body, #root {
@@ -25,22 +25,6 @@ body {
   background: #050505;
   color: #e5e5e5;
   user-select: none;
-}
-html {
-  /* Force correct scaling on high-DPI */
-  zoom: 1;
-}
-
-@media (min-resolution: 120dpi) {
-  html { zoom: 1.1; }
-}
-
-@media (min-resolution: 144dpi) {
-  html { zoom: 1.25; }
-}
-
-@media (min-resolution: 192dpi) {
-  html { zoom: 1.5; }
 }
 /* ══════════════════════════════════════════
    BACKGROUND LAYERS

@@ -4,7 +4,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Manager;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use std::io::Read; // ADD THIS
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -169,29 +168,22 @@ fn toggle_zapret(app: tauri::AppHandle, enable: bool, mode: String) -> Result<St
             let mut cmd = Command::new(&exe_path);
             cmd.args(&args)
                .current_dir(&bin_dir) // Force working directory to target/debug/bin/
-               .stdout(std::process::Stdio::piped())
-               .stderr(std::process::Stdio::piped());
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null());
 
             #[cfg(windows)] cmd.creation_flags(CREATE_NO_WINDOW);
             
             let mut child = cmd.spawn().map_err(|e| format!("Failed to start: {}", e))?;
             
-            // Wait 1 second to see if it crashes immediately
+            // Give winws time to load WinDivert and reject invalid arguments.
             std::thread::sleep(std::time::Duration::from_millis(1000));
 
             match child.try_wait() {
-                Ok(Some(_status)) => {
-                    // IT CRASHED! Read the error output
-                    let mut stderr_output = String::new();
-                    if let Some(mut stderr) = child.stderr.take() {
-                        let _ = stderr.read_to_string(&mut stderr_output);
-                    }
-                    let err_msg = if stderr_output.is_empty() { 
-                        "Process exited immediately (Check WinDivert.dll / Admin rights)".into() 
-                    } else { 
-                        stderr_output.trim().to_string() 
-                    };
-                    return Err(format!("Zapret crashed: {}", err_msg));
+                Ok(Some(status)) => {
+                    return Err(format!(
+                        "Zapret exited immediately with status {} (check WinDivert files and administrator rights)",
+                        status
+                    ));
                 }
                 Ok(None) => {
                     // Still running, success!

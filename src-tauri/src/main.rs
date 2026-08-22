@@ -6,11 +6,6 @@ use std::os::windows::process::CommandExt;
 fn main() {
     #[cfg(windows)]
     {
-        std::env::set_var(
-            "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
-            "--force-device-scale-factor=1"
-        );
-
         let is_admin = {
             let output = std::process::Command::new("whoami")
                 .args(&["/groups"])
